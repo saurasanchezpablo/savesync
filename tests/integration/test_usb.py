@@ -104,3 +104,16 @@ def test_ludusavi_resolution_priority(make_usb, tmp_path):
     assert usbmod.resolve_ludusavi(config, drive) == ([str(override)], "override")
     config["ludusavi_path_override"] = str(tmp_path / "missing")
     assert usbmod.resolve_ludusavi(config, drive)[0] is None
+
+
+def test_static_fixture_is_a_valid_medium(tmp_path):
+    source = os.path.join(os.path.dirname(__file__), "..", "fixtures", "fake_usb")
+    root = tmp_path / "E"
+    shutil.copytree(source, root)
+    drive = fake_drive(str(root), serial="FAKE-0001")
+    identity = usbmod.read_identity(drive)
+    assert identity.usb_id == "00000000-0000-4000-8000-00000000f1a7"
+    config = usbmod.registration_fields(drive, identity)
+    assert usbmod.classify(drive, config)[0] == UsbMatch.REGISTERED
+    other_serial = fake_drive(str(root), serial="FAKE-9999")
+    assert usbmod.classify(other_serial, config)[0] == UsbMatch.UNKNOWN
