@@ -1,0 +1,101 @@
+# ZMIERZONE na Decku 2026-08-22: dosłowne bloki z
+# ~/.var/app/com.github.mtkennerly.ludusavi/config/ludusavi/manifest.yaml (17 MB, 53019
+# tytułów, z czego 14374 ma "  steam:"). Zachowane celowo:
+#  * identyfikator sklepowy leży pod "  steam:" / "    id: N" — NIE pod "  id:";
+#  * "Blue Prince" ma w bloku "  id:" listę "steamExtra" z INNYMI liczbami (2984250,
+#    3711820) niż jego prawdziwy appid (1569580) — pułapka na naiwne grepowanie;
+#  * tytuł z dwukropkiem jest w cudzysłowach;
+#  * "-KLAUS-" i "1001 Jigsaw Castles And Palaces" to prawdziwe wpisy BEZ appidu;
+#  * "Alien Breed" i "Amazon: Guardians of Eden" mają "  gog:" / "    id: N" i ŻADNEGO
+#    appidu Steama — czyli linia "    id:" sama w sobie NIE znaczy „identyfikator
+#    Steama". Bez bramki na bloku "  steam:" poszlibyśmy do sklepu Steama z numerem
+#    z GOG-a (1207663733), czyli po opis zupełnie innej gry.
+"-KLAUS-":
+  alias: Klaus
+1001 Jigsaw Castles And Palaces:
+  alias: 1001 Jigsaw. Castles and Palaces
+Alien Breed:
+  gog:
+    id: 1207663733
+  id:
+    lutris: alien-breed
+"Amazon: Guardians of Eden":
+  cloud:
+    gog: true
+  gog:
+    id: 2012885158
+Animal Well:
+  cloud:
+    steam: true
+  files:
+    "<home>/AppData/LocalLow/Billy Basso/Animal Well":
+      tags:
+        - save
+      when:
+        - os: windows
+  installDir:
+    Animal Well: {}
+  launch:
+    "<base>/Animal Well.exe":
+      - when:
+          - bit: 64
+            os: windows
+            store: steam
+  steam:
+    id: 813230
+Blue Prince:
+  cloud:
+    steam: true
+  files:
+    "<home>/AppData/LocalLow/Dogubomb/BLUE PRINCE/storage":
+      tags:
+        - save
+      when:
+        - os: windows
+    "<winLocalAppData>/Packages/RawFury.BluePrince_9s0pnehqffj7t/SystemAppData/wgs":
+      tags:
+        - save
+      when:
+        - os: windows
+          store: microsoft
+  id:
+    lutris: blue-prince
+    steamExtra:
+      - 2984250
+      - 3711820
+  installDir:
+    Blue Prince: {}
+  launch:
+    "<base>/BLUE PRINCE.app/Contents/MacOS/BLUE PRINCE":
+      - when:
+          - os: mac
+            store: steam
+    "<base>/BLUE PRINCE.exe":
+      - when:
+          - bit: 64
+            os: windows
+            store: steam
+  steam:
+    id: 1569580
+Blue Protocol:
+  steam:
+    id: 2139230
+"The Binding of Isaac: Rebirth":
+  cloud:
+    gog: true
+    steam: true
+  steam:
+    id: 250900
+"Marvel Tōkon: Fighting Souls":
+  cloud:
+    steam: true
+  id:
+    lutris: marvel-tokon-fighting-souls
+    steamExtra:
+      - 4839960
+      - 5030930
+  steam:
+    id: 3787240
+"Marvel vs. Capcom Fighting Collection: Arcade Classics":
+  steam:
+    id: 2634890
