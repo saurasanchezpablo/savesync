@@ -1,0 +1,12 @@
+.claude/settings.json
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.benchmarks/
+build/
+dist/
+*.spec.bak
+.coverage
+htmlcov/

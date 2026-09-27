@@ -1,0 +1,333 @@
+===BACKUP_PREVIEW_NEW_STDOUT===
+{
+  "overall": {
+    "totalGames": 1,
+    "totalBytes": 8,
+    "processedGames": 1,
+    "processedBytes": 8,
+    "changedGames": {
+      "new": 1,
+      "different": 0,
+      "same": 0
+    }
+  },
+  "games": {
+    "Game A": {
+      "decision": "Processed",
+      "change": "New",
+      "files": {
+        "C:/FX/pc/Game A/slot 1.sav": {
+          "change": "New",
+          "bytes": 4
+        },
+        "C:/FX/pc/Game A/slot 2.sav": {
+          "change": "New",
+          "bytes": 4
+        }
+      },
+      "registry": {}
+    }
+  }
+}
+===BACKUP_NEW_STDOUT===
+{
+  "overall": {
+    "totalGames": 1,
+    "totalBytes": 8,
+    "processedGames": 1,
+    "processedBytes": 8,
+    "changedGames": {
+      "new": 1,
+      "different": 0,
+      "same": 0
+    }
+  },
+  "games": {
+    "Game A": {
+      "decision": "Processed",
+      "change": "New",
+      "files": {
+        "C:/FX/pc/Game A/slot 1.sav": {
+          "change": "New",
+          "bytes": 4
+        },
+        "C:/FX/pc/Game A/slot 2.sav": {
+          "change": "New",
+          "bytes": 4
+        }
+      },
+      "registry": {}
+    }
+  }
+}
+===BACKUP_PREVIEW_SAME_STDOUT===
+{
+  "overall": {
+    "totalGames": 1,
+    "totalBytes": 8,
+    "processedGames": 1,
+    "processedBytes": 8,
+    "changedGames": {
+      "new": 0,
+      "different": 0,
+      "same": 1
+    }
+  },
+  "games": {
+    "Game A": {
+      "decision": "Processed",
+      "change": "Same",
+      "files": {
+        "C:/FX/pc/Game A/slot 1.sav": {
+          "change": "Same",
+          "bytes": 4
+        },
+        "C:/FX/pc/Game A/slot 2.sav": {
+          "change": "Same",
+          "bytes": 4
+        }
+      },
+      "registry": {}
+    }
+  }
+}
+===BACKUP_PREVIEW_DIFFERENT_STDOUT===
+{
+  "overall": {
+    "totalGames": 1,
+    "totalBytes": 12,
+    "processedGames": 1,
+    "processedBytes": 12,
+    "changedGames": {
+      "new": 0,
+      "different": 1,
+      "same": 0
+    }
+  },
+  "games": {
+    "Game A": {
+      "decision": "Processed",
+      "change": "Different",
+      "files": {
+        "C:/FX/pc/Game A/slot 1.sav": {
+          "change": "Different",
+          "bytes": 8
+        },
+        "C:/FX/pc/Game A/slot 2.sav": {
+          "change": "Same",
+          "bytes": 4
+        }
+      },
+      "registry": {}
+    }
+  }
+}
+===BACKUP_DIFFERENT_STDOUT===
+{
+  "overall": {
+    "totalGames": 1,
+    "totalBytes": 12,
+    "processedGames": 1,
+    "processedBytes": 12,
+    "changedGames": {
+      "new": 0,
+      "different": 1,
+      "same": 0
+    }
+  },
+  "games": {
+    "Game A": {
+      "decision": "Processed",
+      "change": "Different",
+      "files": {
+        "C:/FX/pc/Game A/slot 1.sav": {
+          "change": "Different",
+          "bytes": 8
+        },
+        "C:/FX/pc/Game A/slot 2.sav": {
+          "change": "Same",
+          "bytes": 4
+        }
+      },
+      "registry": {}
+    }
+  }
+}
+===BACKUPS_STDOUT===
+{
+  "games": {
+    "Game A": {
+      "backupPath": "C:/FX/usb/Game A",
+      "backups": [
+        {
+          "name": "backup-20260927T111740Z",
+          "when": "2026-09-27T11:17:40.715036411Z",
+          "os": "linux",
+          "locked": false
+        },
+        {
+          "name": "backup-20260927T111741Z-diff",
+          "when": "2026-09-27T11:17:41.945167316Z",
+          "os": "linux",
+          "locked": false
+        }
+      ]
+    }
+  }
+}
+===BACKUPS_LOCKED_STDOUT===
+{
+  "games": {
+    "Game A": {
+      "backupPath": "C:/FX/usb/Game A",
+      "backups": [
+        {
+          "name": "backup-20260927T111740Z",
+          "when": "2026-09-27T11:17:40.715036411Z",
+          "os": "linux",
+          "locked": false
+        },
+        {
+          "name": "backup-20260927T111741Z-diff",
+          "when": "2026-09-27T11:17:41.945167316Z",
+          "os": "linux",
+          "comment": "savesync:validated",
+          "locked": true
+        }
+      ]
+    }
+  }
+}
+===RESTORE_PREVIEW_STDOUT===
+{
+  "overall": {
+    "totalGames": 1,
+    "totalBytes": 12,
+    "processedGames": 1,
+    "processedBytes": 12,
+    "changedGames": {
+      "new": 0,
+      "different": 1,
+      "same": 0
+    }
+  },
+  "games": {
+    "Game A": {
+      "decision": "Processed",
+      "change": "Different",
+      "files": {
+        "C:/FX/pc/Game A/slot 1.sav": {
+          "change": "Different",
+          "bytes": 8
+        },
+        "C:/FX/pc/Game A/slot 2.sav": {
+          "change": "Same",
+          "bytes": 4
+        }
+      },
+      "registry": {}
+    }
+  }
+}
+===RESTORE_STDOUT===
+{
+  "overall": {
+    "totalGames": 1,
+    "totalBytes": 12,
+    "processedGames": 1,
+    "processedBytes": 12,
+    "changedGames": {
+      "new": 0,
+      "different": 1,
+      "same": 0
+    }
+  },
+  "games": {
+    "Game A": {
+      "decision": "Processed",
+      "change": "Different",
+      "files": {
+        "C:/FX/pc/Game A/slot 1.sav": {
+          "change": "Different",
+          "bytes": 8
+        },
+        "C:/FX/pc/Game A/slot 2.sav": {
+          "change": "Same",
+          "bytes": 4
+        }
+      },
+      "registry": {}
+    }
+  }
+}
+===UNKNOWN_GAME_STDOUT===
+{
+  "errors": {
+    "unknownGames": [
+      "Nope"
+    ]
+  },
+  "overall": {
+    "totalGames": 0,
+    "totalBytes": 0,
+    "processedGames": 0,
+    "processedBytes": 0,
+    "changedGames": {
+      "new": 0,
+      "different": 0,
+      "same": 0
+    }
+  },
+  "games": {}
+}
+===UNKNOWN_GAME_STDERR===
+No info for these games:
+  - Nope
+===BACKUP_FAILED_ENTRY_STDOUT===
+{
+  "errors": {
+    "someGamesFailed": true
+  },
+  "overall": {
+    "totalGames": 1,
+    "totalBytes": 23,
+    "processedGames": 1,
+    "processedBytes": 19,
+    "changedGames": {
+      "new": 0,
+      "different": 1,
+      "same": 0
+    }
+  },
+  "games": {
+    "Game A": {
+      "decision": "Processed",
+      "change": "Different",
+      "files": {
+        "C:/FX/pc/Game A/extra.sav": {
+          "change": "New",
+          "bytes": 6
+        },
+        "C:/FX/pc/Game A/slot 1.sav": {
+          "change": "Different",
+          "bytes": 13
+        },
+        "C:/FX/pc/Game A/slot 2.sav": {
+          "failed": true,
+          "error": {
+            "message": "Permission denied (os error 13)"
+          },
+          "change": "Different",
+          "bytes": 4
+        }
+      },
+      "registry": {}
+    }
+  }
+}
+===BACKUPS_CORRUPT_MAPPING_STDOUT===
+{
+  "games": {}
+}
+===VERSION_STDOUT===
+ludusavi 0.31.0
