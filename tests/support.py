@@ -41,7 +41,7 @@ def _sha1(path):
         return hashlib.sha1(fh.read()).hexdigest()
 
 
-_CLOCK = 0  # strictly increasing `when` seconds, near the real clock
+_CLOCK = 0  # version counter shared by every simulated PC
 
 
 class FakeLudusavi:
@@ -61,13 +61,15 @@ class FakeLudusavi:
     # --- helpers ---
 
     def _tick(self):
-        # one clock for every simulated PC: versions from two PCs never collide
+        # real time (like Ludusavi) — never drifting ahead when a test writes
+        # many versions per second; a global counter keeps names unique across
+        # the simulated PCs
         global _CLOCK
         import time as _t
-        # like Ludusavi: the machine clock, but never the same second twice
-        _CLOCK = max(_CLOCK + 1, int(_t.time()))
-        stamp = _t.strftime("%Y%m%dT%H%M%SZ", _t.gmtime(_CLOCK))
-        when = _t.strftime("%Y-%m-%dT%H:%M:%S.000000000Z", _t.gmtime(_CLOCK))
+        _CLOCK += 1
+        now = _t.time()
+        stamp = "%s-%06d" % (_t.strftime("%Y%m%dT%H%M%SZ", _t.gmtime(now)), _CLOCK)
+        when = "%s.%09dZ" % (_t.strftime("%Y-%m-%dT%H:%M:%S", _t.gmtime(now)), _CLOCK % 10**9)
         return stamp, when
 
     def local_files(self, title):
