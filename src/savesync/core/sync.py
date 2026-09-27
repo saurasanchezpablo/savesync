@@ -461,7 +461,14 @@ class SyncService:
                 result.duration = round(time.monotonic() - started, 3)
                 if result.outcome == Outcome.FAILED and not self._usb_present(drive):
                     stopped = msg("usb_removed_during_sync")
-            updates.setdefault(key, {}).update(fields)
+            seen = {"title": a.title, "pc_has_save": bool(a.local is not None and a.local.present),
+                    "usb_has_backup": a.effective is not None,
+                    "restore_problem": a.restore_problem or ""}
+            if a.local is not None and a.local.present:
+                seen["save_paths"] = a.local.paths
+            entry = updates.setdefault(key, {})
+            entry.update(seen)
+            entry.update(fields)
             report.games.append(result)
         if stopped is not None:
             report.errors.append(stopped)

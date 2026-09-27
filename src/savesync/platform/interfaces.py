@@ -88,9 +88,11 @@ class StartupManager(ABC):
 
 class ShutdownIntegration(ABC):
     @abstractmethod
-    def register_handler(self, callback) -> None:
+    def register_handler(self, callback, precheck=None) -> None:
         """`callback(deadline_seconds) -> bool` runs the shutdown sync; True when
-        it finished. Must never block shutdown indefinitely."""
+        it finished. `precheck() -> bool` says whether there is anything to do
+        (USB connected and pending changes). Must never block shutdown
+        indefinitely."""
 
     @abstractmethod
     def unregister_handler(self) -> None: ...

@@ -61,7 +61,8 @@ class World:
         os.makedirs(usb_root, exist_ok=True)
         self.drive = fake_drive(usb_root)
         self.pcs = {}
-        self.current = None
+        # the live save tree belongs to PC "A" until the USB is carried elsewhere
+        self.current = "A"
 
     def game_dir(self, title):
         return os.path.join(self.home, "AppData", "Roaming", title.replace(" ", "_"))
@@ -72,8 +73,6 @@ class World:
     def pc(self, name="A") -> PC:
         if name not in self.pcs:
             self.pcs[name] = PC(self, name)
-        if self.current is None:
-            self.current = name
         return self.pcs[name]
 
     def switch_pc(self, name) -> PC:
@@ -101,6 +100,5 @@ class World:
         return read(path) if os.path.exists(path) else None
 
     def usb_versions(self, title):
-        pc = self.pc(self.current)
-        data = pc.ludusavi.read_mapping(self.drive.backups_dir, title)
+        data = FakeLudusavi().read_mapping(self.drive.backups_dir, title)
         return data["backups"] if isinstance(data, dict) else []

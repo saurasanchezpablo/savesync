@@ -52,7 +52,10 @@ FIELDS = {
     "trial": None,
     # User-provided process names that mean "this game is running".
     "process_names": [],
-    "usb_versions": [],
+    # What the last cycle saw, for the UI (never used for decisions).
+    "pc_has_save": False,
+    "usb_has_backup": False,
+    "restore_problem": "",
 }
 
 CONFIG_FIELDS = {

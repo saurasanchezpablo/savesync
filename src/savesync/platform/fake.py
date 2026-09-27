@@ -117,12 +117,15 @@ class FakeStartupManager(StartupManager):
 class FakeShutdownIntegration(ShutdownIntegration):
     def __init__(self):
         self.callback = None
+        self.precheck = None
 
-    def register_handler(self, callback) -> None:
+    def register_handler(self, callback, precheck=None) -> None:
         self.callback = callback
+        self.precheck = precheck
 
     def unregister_handler(self) -> None:
         self.callback = None
+        self.precheck = None
 
     def simulate_shutdown(self, deadline: float = 170):
         return self.callback(deadline) if self.callback else None
