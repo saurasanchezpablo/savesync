@@ -62,13 +62,19 @@ class WindowsProcessChecker(ProcessChecker):
         return [(name.lower(), _norm(exe)) for name, exe in self.lister()]
 
     def is_running(self, title: str) -> bool:
+        processes = self._snapshot if self._snapshot is not None else self._list()
+        return self._match(title, processes)
+
+    def is_running_now(self, title: str) -> bool:
+        return self._match(title, self._list())
+
+    def _match(self, title: str, processes) -> bool:
         hints = self.hints(title)
         exes = {e.lower() for e in hints.exe_names if e}
         exes = {e for e in exes if e not in GENERIC_EXES}
         dirs = ["/" + _norm(d).strip("/") + "/" for d in hints.install_dirs if d and d.strip()]
         if not exes and not dirs:
             return False
-        processes = self._snapshot if self._snapshot is not None else self._list()
         for name, exe in processes:
             if name in exes or (exe and os.path.basename(exe) in exes):
                 return True

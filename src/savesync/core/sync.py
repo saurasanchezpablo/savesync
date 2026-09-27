@@ -85,11 +85,14 @@ def _mapping_title(path: str):
 
 
 def corrupt_usb_games(backups_dir: str, listing: dict) -> dict:
-    """{title: mapping path} for USB game folders Ludusavi could not read.
+    """{folder name: (title or None, mapping path)} for USB game folders whose
+    index Ludusavi could not read.
 
     MEASURED: a damaged mapping.yaml makes `backups --api` report nothing, which
     is indistinguishable from "the USB has no backup" — and would let this PC
-    upload over it as if it were the first time.
+    upload over it as if it were the first time, and retention then deletes the
+    old versions. Keyed by FOLDER: a damaged file often has no readable `name:`,
+    and the folder name ("Isaac_ Rebirth") is not the title ("Isaac: Rebirth").
     """
     listed_dirs = {backup_dir_name(t) for t in listing}
     listed = set(listing)
@@ -105,8 +108,30 @@ def corrupt_usb_games(backups_dir: str, listing: dict) -> dict:
         name = _mapping_title(mapping)
         if (name and name in listed) or entry in listed_dirs:
             continue
-        out[name or entry] = mapping
+        out[entry] = (name, mapping)
     return out
+
+
+def protected_snapshots(registry) -> set:
+    """Snapshots that cleanup must never remove: active trials (every version and
+    checkpoint) and any recorded unfinished operation."""
+    keep = set()
+    for rec in registry.all():
+        trial = rec.get("trial") or {}
+        keep.update(p for p in (trial.get("original"), trial.get("usb_copy")) if p)
+        keep.update(p for p in (trial.get("latest") or {}).values() if p)
+        pending = rec.get("pending_op") or {}
+        if pending.get("snapshot"):
+            keep.add(pending["snapshot"])
+    return keep
+
+
+def _iso_seconds(when: str):
+    import calendar
+    try:
+        return calendar.timegm(time.strptime((when or "")[:19], "%Y-%m-%dT%H:%M:%S"))
+    except ValueError:
+        return None
 
 
 class SyncService:
@@ -136,10 +161,14 @@ class SyncService:
         if self.log is not None:
             self.log.add(operation, message, **fields)
 
-    def _is_running(self, title: str) -> bool:
+    def _is_running(self, title: str, fresh: bool = False) -> bool:
+        """`fresh=True` right before saves are written: the cycle's process
+        snapshot may be minutes old by then (rule 4)."""
         if self.process is None:
             return False
         try:
+            if fresh:
+                return bool(self.process.is_running_now(title))
             return bool(self.process.is_running(title))
         except Exception:
             # not knowing whether a game runs is treated as running: never touch it
@@ -226,11 +255,24 @@ class SyncService:
 
         usb_id = self._usb_id()
         universe = {}
-        for title in list(scan) + list(listing) + list(corrupt):
+        for title in list(scan) + list(listing):
             universe.setdefault(title_key(title), title)
         for key, rec in records.items():
             if rec.get("last_synced_backup") and rec.get("baseline_usb_id") == usb_id:
                 universe.setdefault(key, rec["title"])
+        # a damaged USB index blocks every game whose backup FOLDER it is
+        corrupt_by_key = {}
+        by_folder = {}
+        for key, title in universe.items():
+            by_folder.setdefault(backup_dir_name(title), []).append(key)
+        for folder, (name, mapping) in corrupt.items():
+            keys = by_folder.get(folder) or []
+            if not keys:
+                title = name or folder
+                keys = [title_key(title)]
+                universe.setdefault(keys[0], title)
+            for key in keys:
+                corrupt_by_key[key] = mapping
         if wanted is not None:
             universe = {k: t for k, t in universe.items() if k in wanted}
             for key in wanted - set(universe):
@@ -245,7 +287,7 @@ class SyncService:
             if rec.get("excluded") and titles is None:
                 continue
             out[key] = self._analyze_game(key, title, rec, scan.get(title), listing.get(title) or [],
-                                          corrupt.get(title), drive, fix_usb)
+                                          corrupt_by_key.get(key), drive, fix_usb)
         report.timings["classify"] = round(time.monotonic() - t0, 3)
         return out
 
@@ -265,19 +307,25 @@ class SyncService:
             a.message = msg("ludusavi_unknown_title", title=title)
             return a
 
-        # An interrupted backup from THIS PC may have left an unvalidated version
-        # on the USB; it is marked incomplete so no PC restores it (rule 5).
         pending = rec.get("pending_op") or {}
+        if pending.get("kind") == "restore":
+            # A restore that never finished (process killed, e.g. at shutdown):
+            # the PC may hold a mix of both versions. Nothing automatic may use
+            # it — the user recovers the snapshot or chooses a side explicitly.
+            a.state, a.skip = GameState.ERROR, True
+            a.message = msg("incomplete_operation", title=title, kind="restore")
+            return a
+        # An interrupted backup from THIS PC may have left an unvalidated version
+        # on the USB; it is marked incomplete so no PC restores it (rule 5). Only
+        # the version this PC created is touched — never another PC's.
         if fix_usb and pending.get("kind") == "backup":
-            since = pending.get("prev_when") or ""
-            fixed = []
-            for b in backups:
-                if b.when > since and not b.validated and not b.incomplete:
-                    self.engine.edit_backup(title, drive.backups_dir, b.name,
-                                            comment="savesync:incomplete")
-                    b = type(b)(b.name, b.when, b.locked, "savesync:incomplete", b.os)
-                fixed.append(b)
-            a.backups = backups = fixed
+            ours = self._interrupted_version(pending, backups)
+            if ours is not None:
+                self.engine.edit_backup(title, drive.backups_dir, ours.name,
+                                        comment="savesync:incomplete")
+                backups = [type(b)(b.name, b.when, b.locked, "savesync:incomplete", b.os)
+                           if b is ours else b for b in backups]
+                a.backups = backups
 
         a.effective = effective = latest_effective(backups)
         newest = latest_any(backups)
@@ -360,6 +408,33 @@ class SyncService:
         return a
 
     @staticmethod
+    def _interrupted_version(pending: dict, backups):
+        """The version an interrupted upload of THIS PC left, or None.
+
+        It is the one the failed upload reported, or else the first version
+        appended after the ones known when the upload started, still without a
+        Save Sync mark and written within minutes of the start (by this PC's
+        clock, which is the one Ludusavi used for it).
+        """
+        known = {tuple(v) for v in pending.get("known") or []}
+        created = pending.get("created")
+        fresh = [b for b in backups if (b.name, b.when) not in known]
+        for b in fresh:
+            if created and b.name == created and not b.validated:
+                return None if b.incomplete else b
+        if created:
+            return None
+        started = pending.get("started")
+        for b in fresh:
+            if b.validated or b.incomplete or b.comment:
+                return None
+            stamp = _iso_seconds(b.when)
+            if started is None or stamp is None or abs(stamp - float(started)) > 600:
+                return None
+            return b
+        return None
+
+    @staticmethod
     def _state_message(a: GameAnalysis, present: bool) -> dict:
         title = a.title
         if a.state == GameState.MISSING_LOCAL_PATH:
@@ -414,6 +489,11 @@ class SyncService:
 
     def _run(self, drive, titles, analyze_only, cancel, deadline, progress, report):
         progress("analyzing", 0, 0, "")
+        check = getattr(self.engine, "check_version", None)
+        problem = check() if check else None
+        if problem:
+            report.errors.append(msg("ludusavi_missing", detail=problem))
+            return
         analyses = self._analyze_all(drive, titles, not analyze_only, report)
         if analyses is None:
             return
@@ -471,6 +551,10 @@ class SyncService:
             entry = updates.setdefault(key, {})
             entry.update(seen)
             entry.update(fields)
+            if result.outcome not in (Outcome.NOTHING, Outcome.SKIPPED):
+                # persisted at once: a validated result must survive the process
+                # being killed later in the cycle (shutdown sync)
+                self.registry.update_many({key: dict(entry)})
             report.games.append(result)
         if stopped is not None:
             report.errors.append(stopped)
@@ -519,16 +603,16 @@ class SyncService:
         """PC → USB. The baseline moves only after the engine validated the new
         version; until then the attempt is recorded as pending (rule 5)."""
         title = a.title
-        if self._is_running(title):
+        if self._is_running(title, fresh=True):
             m = msg("game_running_now", title=title)
             return self._failure(a, GameState.RUNNING, m, outcome=Outcome.SKIPPED)
         if a.fingerprint is None:
             m = msg("validation_failed", title=title, detail="the PC saves could not be read")
             return self._failure(a, GameState.ERROR, m)
         cfg = self._cfg()
-        self.registry.write({"title": title, "pending_upload": True,
-                              "pending_op": {"kind": "backup", "started": self.clock(),
-                                             "prev_when": a.usb_when}})
+        pending = {"kind": "backup", "started": self.clock(), "prev_when": a.usb_when,
+                   "known": [[b.name, b.when] for b in a.backups]}
+        self.registry.write({"title": title, "pending_upload": True, "pending_op": pending})
         started = time.monotonic()
         result = self.engine.usb_backup(title, drive.backups_dir, cfg["full_limit"],
                                         cfg["differential_limit"])
@@ -538,7 +622,9 @@ class SyncService:
                 msg("backup_failed", title=title, detail=result.problem)
             self._event("backup", m, game=title, source="PC", destination="USB",
                         result="failed", duration=duration, error=result.problem)
-            return self._failure(a, GameState.ERROR, m)
+            if result.backup_name:
+                pending["created"] = result.backup_name
+            return self._failure(a, GameState.ERROR, m, {"pending_op": pending})
         fields = self._baseline_fields(result.when, a.fingerprint, a.local.paths)
         fields["title"] = title
         m = msg("backup_done" if result.changed else "backup_same", title=title)
@@ -550,7 +636,7 @@ class SyncService:
     def _download(self, drive, a: GameAnalysis, safety_dir, safety_ok):
         """USB → PC: safety snapshot, restore, validate, baseline (plan §12.5)."""
         title = a.title
-        if self._is_running(title):
+        if self._is_running(title, fresh=True):
             m = msg("game_running_now", title=title)
             return self._failure(a, GameState.RUNNING, m, outcome=Outcome.SKIPPED)
         if safety_ok is False or safety_dir is None:
@@ -563,13 +649,42 @@ class SyncService:
                            adopt_when: str | None = None):
         """Restore `version` from the USB with rollback on failure (rule 6).
         Returns (GameResult, registry fields)."""
-        self.registry.write({"title": title, "last_safety": safety_dir,
-                              "pending_op": {"kind": "restore", "started": self.clock(),
-                                             "snapshot": safety_dir,
-                                             "target_when": version.when}})
         started = time.monotonic()
-        before = (self.engine.scan(drive.backups_dir, [title]) or {}).get(title)
+        a = GameAnalysis(key=key, title=title, state=GameState.USB_NEWER)
+        scan = self.engine.scan(drive.backups_dir, [title])
+        before = (scan or {}).get(title)
+        if scan is None or (safety_ok is True and before is None):
+            # without the PC's file list, files the USB version lacks could not be
+            # removed and the "restored" PC would silently be a mix of both
+            return self._failure(a, GameState.ERROR, msg(
+                "restore_failed", title=title,
+                detail="the PC saves could not be scanned before the restore"))
+        # What the restore will create, known BEFORE it runs: a restore killed
+        # halfway (deadline, USB pulled) returns no JSON to learn it from.
+        preview = self.engine.usb_preview(title, drive.backups_dir, backup=version.name)
+        if preview is None:
+            return self._failure(a, GameState.ERROR, msg(
+                "restore_failed", title=title, detail="the restore preview failed"))
+        will_create = sorted(p for p, i in preview["files"].items()
+                             if (i or {}).get("change") == "New")
+        if safety_ok is None:
+            # "no saves to protect" — yet files exist where the version would go
+            # (Ludusavi does not attribute them to this game here): overwriting
+            # them could not be undone
+            unprotected = sorted(p for p, i in preview["files"].items()
+                                 if (i or {}).get("change") == "Different")
+            if unprotected:
+                return self._failure(a, GameState.ERROR, msg(
+                    "restore_failed", title=title,
+                    detail="files already exist at %s but are not detected as this game's "
+                           "saves, so they cannot be protected" % unprotected[0]))
+        self.registry.write({"title": title, "last_safety": safety_dir,
+                             "pending_op": {"kind": "restore", "started": self.clock(),
+                                            "snapshot": safety_dir, "safety_ok": safety_ok,
+                                            "target_when": version.when,
+                                            "created": will_create}})
         result = self.engine.usb_restore(title, drive.backups_dir, backup=version.name)
+        result.created = sorted(set(result.created) | set(will_create))
         problem = result.problem
         local = None
         if result.ok and before is not None and safety_ok is True:
@@ -596,7 +711,6 @@ class SyncService:
                 if after is None or any(c != "Same" for c in changes):
                     problem = "the PC saves do not match the USB version after the restore"
         duration = time.monotonic() - started
-        a = GameAnalysis(key=key, title=title, state=GameState.USB_NEWER)
         if problem:
             return self._rollback(a, safety_dir, safety_ok, result.created, problem, duration)
         fp = self._compute_fp(local.paths, self._extra(local))
@@ -618,6 +732,8 @@ class SyncService:
         """Bring the PC back to its state before the failed restore."""
         title = a.title
         recovered = False
+        # The rollback is local: a cancelled runner (USB pulled) must not stop it.
+        self.engine.reset()
         if safety_ok is True:
             back = self.engine.restore_from(title, safety_dir)
             recovered = back.ok
@@ -679,7 +795,7 @@ class SyncService:
                 self.engine.reset()
                 self._begin_processes()
                 try:
-                    if self._is_running(title):
+                    if self._is_running(title, fresh=True):
                         m = msg("not_resolvable_running", title=title)
                         return GameResult(key, title, GameState.RUNNING, Outcome.SKIPPED, m)
                     result, fields = action(key, rec)
@@ -732,6 +848,11 @@ class SyncService:
     def use_pc(self, drive, title: str) -> GameResult:
         """Keep the PC version: it becomes the newest USB version."""
         def action(key, rec):
+            if (rec.get("pending_op") or {}).get("kind") == "restore":
+                # the PC may hold a half-restored mix; uploading it would spread it
+                a = GameAnalysis(key=key, title=title, state=GameState.ERROR)
+                return self._failure(a, GameState.ERROR, msg(
+                    "incomplete_operation", title=title, kind="restore"), outcome=Outcome.SKIPPED)
             result, fields = self._upload_current(drive, key, title,
                                                   msg("resolved_use_pc", title=title),
                                                   Outcome.BACKED_UP)
@@ -756,8 +877,8 @@ class SyncService:
         a.local = local
         a.fingerprint = self._compute_fp(local.paths, self._extra(local))
         versions = self._versions(drive, title)
-        newest = latest_effective(versions)
-        a.effective = newest
+        a.backups = versions
+        a.effective = latest_effective(versions)
         result, fields = self._upload(drive, a)
         if result.outcome in (Outcome.BACKED_UP, Outcome.BASELINE):
             result.outcome = outcome
@@ -778,10 +899,17 @@ class SyncService:
             with self.engine.lock():
                 self._begin_processes()
                 try:
-                    if self._is_running(title):
+                    if self._is_running(title, fresh=True):
                         return GameResult(key, title, GameState.RUNNING, Outcome.SKIPPED,
                                           msg("not_resolvable_running", title=title))
-                    back = self.engine.restore_from(title, snapshot)
+                    if pending.get("kind") == "restore" and pending.get("safety_ok", True) is None:
+                        # the PC had no saves before: undoing the partial restore
+                        # means removing what it created
+                        from .engine import OpResult
+                        back = OpResult(self._remove_created(pending.get("created")),
+                                        problem="could not remove the partially restored files")
+                    else:
+                        back = self.engine.restore_from(title, snapshot)
                 finally:
                     self._end_processes()
         except SyncLocked as exc:
@@ -799,13 +927,4 @@ class SyncService:
         return GameResult(key, title, GameState.UNKNOWN, Outcome.RESTORED, m)
 
     def protected_snapshots(self) -> set:
-        """Snapshots that cleanup must never remove: active trials and failed
-        restores whose recovery has not happened yet."""
-        keep = set()
-        for rec in self.registry.all():
-            trial = rec.get("trial") or {}
-            keep.update(p for p in (trial.get("original"), trial.get("usb_copy")) if p)
-            pending = rec.get("pending_op") or {}
-            if pending.get("failed") and pending.get("snapshot"):
-                keep.add(pending["snapshot"])
-        return keep
+        return protected_snapshots(self.registry)

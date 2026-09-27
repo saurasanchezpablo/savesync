@@ -68,6 +68,13 @@ class TrialDialog(QDialog):
                 b.setEnabled(False)
             return
         side = trial.get("side")
+        if side == "starting":
+            self.side.setText("The trial did not finish starting. Cancel it to return to "
+                              "the original PC state.")
+            for b in (self.test_usb, self.test_pc, self.keep_usb, self.keep_pc):
+                b.setEnabled(False)
+            self.cancel_trial.setEnabled(not busy)
+            return
         self.side.setText("Now on the PC: the %s version.\nUSB version: %s" % (
             "USB" if side == "usb" else "original PC", iso_text(trial.get("usb_when"))))
         self.test_usb.setEnabled(not busy and side != "usb")

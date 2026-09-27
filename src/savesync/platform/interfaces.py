@@ -74,6 +74,11 @@ class ProcessChecker(ABC):
     @abstractmethod
     def is_running(self, title: str) -> bool: ...
 
+    def is_running_now(self, title: str) -> bool:
+        """Like is_running, but from a fresh look at the processes — asked right
+        before saves are written, when the cycle's snapshot may be stale."""
+        return self.is_running(title)
+
 
 class StartupManager(ABC):
     @abstractmethod

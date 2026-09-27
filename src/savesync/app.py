@@ -27,7 +27,7 @@ from .core.paths import AppPaths
 from .core.registry import Config, Registry, title_key
 from .core.safety import SafetyStore, human_size
 from .core.state import GameResult, GameState, Outcome, SyncReport
-from .core.sync import CancelToken, SyncService
+from .core.sync import CancelToken, SyncService, protected_snapshots
 from .core.trial import TrialManager
 from .metadata.interfaces import CompositeMetadataProvider
 from .metadata.ludusavi import LudusaviMetadataProvider
@@ -228,14 +228,7 @@ class AppController(QObject):
             self.platform.shutdown.unregister_handler()
 
     def _protected(self):
-        keep = set()
-        for rec in self.registry.all():
-            trial = rec.get("trial") or {}
-            keep.update(p for p in (trial.get("original"), trial.get("usb_copy")) if p)
-            pending = rec.get("pending_op") or {}
-            if pending.get("failed") and pending.get("snapshot"):
-                keep.add(pending["snapshot"])
-        return keep
+        return protected_snapshots(self.registry)
 
     # --- USB ---------------------------------------------------------------------
 

@@ -73,8 +73,9 @@ CODES = {
                              " the restore was not attempted."),
     "baseline_created": "{title}: baseline recorded (PC and USB are identical).",
     "validation_failed": "{title}: the result could not be validated: {detail}",
-    "incomplete_operation": ("{title}: a previous {kind} was interrupted. It was not"
-                             " counted as synchronized."),
+    "incomplete_operation": ("{title}: a previous {kind} was interrupted and was not"
+                             " counted as synchronized. Recover the previous PC state"
+                             " or choose Use USB."),
     "game_running_now": "{title} started running; its saves were left untouched.",
     "not_resolvable_running": "{title} is running. Close the game first.",
     "resolved_use_usb": "{title}: kept the USB version.",

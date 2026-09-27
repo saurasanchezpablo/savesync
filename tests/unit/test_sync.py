@@ -226,7 +226,7 @@ def test_corrupt_usb_games_reads_mapping_names(tmp_path):
     (root / "Broken" / "mapping.yaml").write_text("garbage")
     (root / "loose-folder").mkdir()
     assert corrupt_usb_games(str(root), {"Game: X": []}) == {
-        "Broken": str(root / "Broken" / "mapping.yaml")}
+        "Broken": (None, str(root / "Broken" / "mapping.yaml"))}
 
 
 def test_unknown_ludusavi_title_is_flagged_once(world, pc):

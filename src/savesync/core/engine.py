@@ -256,15 +256,42 @@ class BackupInfo:
 
 
 def latest_effective(backups):
-    """Newest backup that was not left behind by a failed operation. `when` is
-    ISO-8601 UTC, so text order is time order — no date parsing."""
-    usable = [b for b in backups or [] if b.when and not b.incomplete]
-    return max(usable, key=lambda b: b.when) if usable else None
+    """Newest backup that may be restored and used as a baseline.
+
+    "Newest" is Ludusavi's listing order (the order versions were appended to
+    mapping.yaml), NOT the `when` text: `when` comes from the clock of whichever
+    PC wrote the version, and a PC whose clock is behind would otherwise make the
+    newest version look older than the previous one.
+
+    Once a game has a version Save Sync validated, only validated versions count:
+    an unmarked version after it can be what an upload interrupted by pulling the
+    USB left behind on another PC. A USB without any validated version (made
+    with Ludusavi alone) falls back to the newest version not marked incomplete.
+    """
+    items = [b for b in backups or [] if b.when]
+    if any(b.validated for b in items):
+        items = [b for b in items if b.validated]
+    for b in reversed(items):
+        if not b.incomplete:
+            return b
+    return None
 
 
 def latest_any(backups):
-    usable = [b for b in backups or [] if b.when]
-    return max(usable, key=lambda b: b.when) if usable else None
+    """The version Ludusavi itself treats as newest (it compares previews with it)."""
+    for b in reversed(list(backups or [])):
+        if b.when:
+            return b
+    return None
+
+
+MIN_VERSION = (0, 30, 0)  # `backups edit` (lock/comment) appeared in 0.30.0
+
+
+def parse_version(text: str):
+    import re
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", text or "")
+    return tuple(int(x) for x in match.groups()) if match else None
 
 
 @dataclass
@@ -431,6 +458,22 @@ class LudusaviEngine:
         code, out, err = self.runner(list(self.command) + ["--version"], 30)
         text = (out or err or "").strip()
         return code == 0 and bool(text), text
+
+    def check_version(self):
+        """None when this Ludusavi can be used, else the reason (cached)."""
+        if getattr(self, "_version_problem", False) is not False:
+            return self._version_problem
+        ok, text = self.version()
+        found = parse_version(text) if ok else None
+        if not ok:
+            problem = "Ludusavi could not be started: %s" % (text or self.last_stderr or "no output")
+        elif found is None or found < MIN_VERSION:
+            problem = "Ludusavi %s is too old; version %d.%d or newer is required" % (
+                text, MIN_VERSION[0], MIN_VERSION[1])
+        else:
+            problem = None
+        self._version_problem = problem
+        return problem
 
     # --- reading state ---
 
@@ -610,7 +653,8 @@ class LudusaviEngine:
             if new is not None:
                 self.edit_backup(title, usb_path, new.name, comment=COMMENT_INCOMPLETE)
             self.last_problem = problem
-            return OpResult(False, files=(game or {}).get("files") or {}, problem=problem)
+            return OpResult(False, files=(game or {}).get("files") or {}, problem=problem,
+                            backup_name=new.name if new is not None else "")
 
         result = OpResult(True, files=game.get("files") or {},
                           registry=game.get("registry") or {},
@@ -623,11 +667,15 @@ class LudusaviEngine:
         if adopted is None:
             return OpResult(False, problem="no USB version exists after the backup")
         if new is not None or not adopted.validated or not adopted.locked:
-            locked = self.edit_backup(title, usb_path, adopted.name, lock=True,
-                                      comment=COMMENT_VALIDATED)
-        else:
-            locked = True
-        if locked and previous is not None and previous.name != adopted.name \
+            locked = any(self.edit_backup(title, usb_path, adopted.name, lock=True,
+                                          comment=COMMENT_VALIDATED) for _ in range(2))
+            if not locked:
+                # Without its "validated" mark and lock, other PCs could not tell
+                # this version from a partial one and retention could prune the
+                # previous one — so it does not count as a validated upload.
+                return OpResult(False, backup_name=adopted.name,
+                                problem="the new USB version could not be marked as validated")
+        if previous is not None and previous.name != adopted.name \
                 and (previous.validated or not previous.locked):
             # release the old protection only once the new version holds it
             self.edit_backup(title, usb_path, previous.name, lock=False)

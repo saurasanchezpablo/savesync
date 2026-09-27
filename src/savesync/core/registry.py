@@ -15,6 +15,7 @@ import os
 import re
 import tempfile
 import threading
+import time
 import unicodedata
 
 FIELDS = {
@@ -153,7 +154,15 @@ class _JsonStore:
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as fh:
                 json.dump(data, fh, ensure_ascii=False, indent=1, default=str)
-            os.replace(tmp, self.path)
+            for attempt in range(10):
+                try:
+                    os.replace(tmp, self.path)
+                    break
+                except PermissionError:
+                    # Windows: a reader holding the file open blocks the rename
+                    if attempt == 9:
+                        raise
+                    time.sleep(0.05)
         except BaseException:
             try:
                 os.unlink(tmp)

@@ -41,7 +41,7 @@ def _sha1(path):
         return hashlib.sha1(fh.read()).hexdigest()
 
 
-_CLOCK = 1_800_000_000  # deterministic, strictly increasing `when`
+_CLOCK = 0  # strictly increasing `when` seconds, near the real clock
 
 
 class FakeLudusavi:
@@ -63,8 +63,9 @@ class FakeLudusavi:
     def _tick(self):
         # one clock for every simulated PC: versions from two PCs never collide
         global _CLOCK
-        _CLOCK += 7
         import time as _t
+        # like Ludusavi: the machine clock, but never the same second twice
+        _CLOCK = max(_CLOCK + 1, int(_t.time()))
         stamp = _t.strftime("%Y%m%dT%H%M%SZ", _t.gmtime(_CLOCK))
         when = _t.strftime("%Y-%m-%dT%H:%M:%S.000000000Z", _t.gmtime(_CLOCK))
         return stamp, when
