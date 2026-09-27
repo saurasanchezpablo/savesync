@@ -269,3 +269,15 @@ def test_corrupted_mapping_is_reported_by_the_orchestrator(env, tmp_path):
     env.save("Game A", "v2")
     game = next(g for g in svc.sync(drive).games if g.title == "Game A")
     assert game.state == S.ERROR and game.message["code"] == "usb_backup_corrupt"
+
+
+def test_back_to_back_backups_keep_both_versions(env):
+    """Without the same-second guard the second full backup overwrote the first."""
+    env.save("Game A", "first")
+    first = env.engine.usb_backup("Game A", env.usb, full_limit=3, differential_limit=0)
+    env.save("Game A", "second")
+    second = env.engine.usb_backup("Game A", env.usb, full_limit=3, differential_limit=0)
+    assert first.ok and second.ok and first.backup_name != second.backup_name
+    env.save("Game A", "local")
+    assert env.engine.usb_restore("Game A", env.usb, backup=first.backup_name).ok
+    assert env.read("Game A") == "first"

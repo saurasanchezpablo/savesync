@@ -356,6 +356,8 @@ class LudusaviEngine:
         self._scan_cache = {}
         # time.monotonic() value after which no Ludusavi call may still run
         self.deadline = None
+        self.wall_clock = time.time
+        self.sleep = time.sleep
 
     # --- plumbing ---
 
@@ -574,10 +576,12 @@ class LudusaviEngine:
         args = ["backup", "--force", "--api", "--no-cloud-sync", "--path", usb_path,
                 "--full-limit", str(max(2, int(full_limit))),
                 "--differential-limit", str(max(0, int(diff_limit)))]
+        self._avoid_same_second(previous_list)
         code, data = self._api(_args_with_titles(args, [title]))
         after = self.backups(usb_path, [title])
-        known = {b.name for b in previous_list}
-        created = [b for b in (after or {}).get(title, []) if b.name not in known]
+        # (name, when): a same-second collision reuses the NAME (MEASURED)
+        known = {(b.name, b.when) for b in previous_list}
+        created = [b for b in (after or {}).get(title, []) if (b.name, b.when) not in known]
         new = latest_any(created)
 
         problem = ""
@@ -629,6 +633,21 @@ class LudusaviEngine:
             self.edit_backup(title, usb_path, previous.name, lock=False)
         result.when, result.backup_name = adopted.when, adopted.name
         return result
+
+    def _avoid_same_second(self, existing) -> None:
+        """Wait until "now" is not the second of an existing version.
+
+        MEASURED: Ludusavi names a version `backup-<UTC second>`; a second full
+        backup within the same second reuses that folder and OVERWRITES the
+        previous version's files in place — safety rule 7 broken inside Ludusavi.
+        """
+        stamps = {b.name[:-len("-diff")] if b.name.endswith("-diff") else b.name
+                  for b in existing or []}
+        for _ in range(3):
+            now = "backup-" + time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(self.wall_clock()))
+            if now not in stamps:
+                return
+            self.sleep(1.05 - (self.wall_clock() % 1))
 
     def restore_from(self, title: str, path: str, backup: str | None = None) -> OpResult:
         """Restore `title` from the backups in `path`. Success only when Ludusavi
@@ -759,6 +778,23 @@ def share_manifest(config_dir: str, usb_ludusavi_dir: str) -> bool:
 
 def has_manifest(config_dir: str) -> bool:
     return os.path.isfile(os.path.join(config_dir, "manifest.yaml"))
+
+
+def manifest_disabled(config_dir: str) -> bool:
+    """`manifest: {enable: false}` in config.yaml (custom games only), read as text."""
+    try:
+        with open(os.path.join(config_dir, "config.yaml"), encoding="utf-8") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return False
+    inside = False
+    for line in lines:
+        if line and not line[0].isspace():
+            inside = line.startswith("manifest:")
+            continue
+        if inside and line.strip().replace(" ", "") == "enable:false":
+            return True
+    return False
 
 
 # --- redirects (restoring to a different user profile) ------------------------

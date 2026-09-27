@@ -483,3 +483,22 @@ def test_share_manifest_only_when_newer(tmp_path):
     write(str(cfg / "manifest.yaml"), "new")
     assert eng.share_manifest(str(cfg), str(usb_dir)) is True
     assert eng.share_manifest(str(cfg), str(usb_dir)) is False
+
+
+def test_backup_never_starts_in_the_second_of_an_existing_version(game_env):
+    """MEASURED: a full backup in the same UTC second reuses the version folder and
+    overwrites the previous version in place."""
+    import time as _time
+    engine, fake, usb, save = game_env
+    engine.usb_backup("Hades", usb)
+    data = fake.read_mapping(usb, "Hades")
+    now = 1_900_000_000.2
+    data["backups"][-1]["name"] = "backup-" + _time.strftime("%Y%m%dT%H%M%SZ", _time.gmtime(now))
+    fake._write_mapping(usb, "Hades", data)
+    clock = [now]
+    slept = []
+    engine.wall_clock = lambda: clock[0]
+    engine.sleep = lambda seconds: (slept.append(seconds), clock.__setitem__(0, clock[0] + seconds))
+    write(save, "v2")
+    assert engine.usb_backup("Hades", usb).ok
+    assert slept and 0.8 < slept[0] <= 1.05

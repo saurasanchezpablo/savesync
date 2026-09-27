@@ -166,6 +166,21 @@ class AppController(QObject):
         return LudusaviEngine(command, self.paths.safety, lock_path=self.paths.lock,
                               config_dir=config_dir)
 
+    def _after_ludusavi(self, engine, drive, report) -> None:
+        """Game-database housekeeping after a cycle with the real Ludusavi."""
+        config_dir = getattr(engine, "config_dir", None)
+        if not config_dir or self._engine_factory != self._default_engine:
+            return
+        if not engmod.has_manifest(config_dir) and not engmod.manifest_disabled(config_dir):
+            # without its database Ludusavi recognizes no game at all — that must
+            # not look like "nothing to synchronize"
+            if not any(e.get("code") == "ludusavi_no_manifest" for e in report.errors):
+                report.errors.append(msg("ludusavi_no_manifest"))
+            return
+        if engmod.share_manifest(config_dir, drive.ludusavi_dir):
+            self.log.add("manifest", "Copied Ludusavi's game database to the USB for offline PCs.")
+        self._manifest.manifest_path = self._manifest_path()
+
     def _process_hints(self, title: str) -> ProcessHints:
         hints = self._manifest.process_hints(title)
         rec = self.registry.get(title_key(title)) or {}
@@ -350,8 +365,10 @@ class AppController(QObject):
         def work():
             service = self.service(drive)
             self._cancel = token
-            return service.sync(drive, titles=titles, cancel=token, deadline=deadline,
-                                on_progress=lambda *a: self.syncProgress.emit(*a))
+            report = service.sync(drive, titles=titles, cancel=token, deadline=deadline,
+                                  on_progress=lambda *a: self.syncProgress.emit(*a))
+            self._after_ludusavi(service.engine, drive, report)
+            return report
 
         def done(result):
             if isinstance(result, Exception):
@@ -603,9 +620,13 @@ class AppController(QObject):
     def set_process_names(self, title: str, names) -> None:
         self.registry.upsert({"title": title, "process_names": [n.strip() for n in names if n.strip()]})
 
-    def add_redirect(self, source: str, target: str) -> None:
+    def add_redirect(self, recorded: str, local: str) -> None:
+        """Map a folder recorded on another PC (e.g. C:/Users/alice) to this PC's
+        (C:/Users/bob). Bidirectional, source = this PC: restores go to the local
+        folder and backups keep recording the original one, so both PCs keep
+        reading the same paths from the USB."""
         redirects = [list(r) for r in self.config.get("redirects") or []]
-        entry = ["restore", source, target]
+        entry = ["bidirectional", local, recorded]
         if entry not in redirects:
             redirects.append(entry)
         self.config.update(redirects=redirects)

@@ -584,11 +584,14 @@ class SyncService:
             elif local.failed:
                 problem = "the restored saves could not be read"
             else:
-                newest = latest_any(self._versions(drive, title))
-                # Ludusavi compares with the NEWEST version, so the check proves
-                # something only when that is the version just restored
-                if newest is not None and newest.name == version.name \
-                        and not local.same_as_target:
+                # A restore preview of the same version compares it with the PC
+                # through Ludusavi's redirects (a backup preview would compare
+                # paths recorded on another PC with this PC's paths — MEASURED
+                # "Different" after a correct cross-user restore).
+                after = self.engine.usb_preview(title, drive.backups_dir, backup=version.name)
+                changes = [(i or {}).get("change") for i in ((after or {}).get("files") or {}).values()]
+                changes += [(i or {}).get("change") for i in ((after or {}).get("registry") or {}).values()]
+                if after is None or any(c != "Same" for c in changes):
                     problem = "the PC saves do not match the USB version after the restore"
         duration = time.monotonic() - started
         a = GameAnalysis(key=key, title=title, state=GameState.USB_NEWER)

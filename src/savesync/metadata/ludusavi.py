@@ -113,13 +113,21 @@ class LudusaviMetadataProvider(GameMetadataProvider):
     def __init__(self, manifest_path: str | None):
         self.manifest_path = manifest_path
         self._index = None
+        self._stamp = None
         self._lock = threading.Lock()
 
     def _entries(self) -> dict:
+        """Parsed once, and again only when the file changed (a full parse of the
+        real manifest takes ~2 s)."""
+        path = self.manifest_path
+        try:
+            stamp = (path, os.path.getmtime(path)) if path else None
+        except OSError:
+            stamp = None
         with self._lock:
-            if self._index is None:
-                path = self.manifest_path
-                self._index = parse_manifest(path) if path and os.path.isfile(path) else {}
+            if self._index is None or stamp != self._stamp:
+                self._index = parse_manifest(path) if stamp else {}
+                self._stamp = stamp
             return self._index
 
     def reload(self) -> None:

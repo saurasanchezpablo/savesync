@@ -244,7 +244,7 @@ class ManageDialog(QDialog):
         source, target = self.source.text().strip(), self.target.text().strip()
         if not source or not target:
             return
-        self.controller.add_redirect(source, target)
+        self.controller.add_redirect(recorded=source, local=target)
         QMessageBox.information(self, "Mapping added",
                                 "Synchronize again: the game will be offered with the new path.")
         self.accept()
