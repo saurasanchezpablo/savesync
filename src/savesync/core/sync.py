@@ -459,6 +459,8 @@ class SyncService:
                 started = time.monotonic()
                 result, fields = self._act(drive, a, safety_dir, safety.get(a.title, False))
                 result.duration = round(time.monotonic() - started, 3)
+                report.timings["operations"] = round(
+                    report.timings.get("operations", 0.0) + result.duration, 3)
                 if result.outcome == Outcome.FAILED and not self._usb_present(drive):
                     stopped = msg("usb_removed_during_sync")
             seen = {"title": a.title, "pc_has_save": bool(a.local is not None and a.local.present),
