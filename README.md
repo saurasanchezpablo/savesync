@@ -29,6 +29,11 @@ Unknown is never success, and a conflict is never resolved automatically.
 | 6. Failed restore → recoverable | Every USB → PC restore is preceded by a local safety snapshot and rolled back automatically on failure. |
 | 7. Previous version kept | The last validated USB version is **locked** in Ludusavi before a new backup; the new one is locked only after validation. |
 
+Which USB version counts as "the newest": Ludusavi's own listing order (never
+the timestamps, which come from each PC's clock), and — once Save Sync has
+validated a version of a game — only validated versions. An unmarked version
+after it may be what an upload interrupted on another PC left behind.
+
 Measured Ludusavi 0.31 behaviors that shaped this design (each has a test):
 failed backups still become versions and count toward retention; a corrupt
 `mapping.yaml` looks like an empty USB; a single unknown title fails a whole
@@ -37,7 +42,8 @@ second overwrite each other; restores never delete files.
 
 ## Using it
 
-1. Put the portable Ludusavi on the USB: `X:\SaveSync\ludusavi\ludusavi.exe`
+1. Put the portable Ludusavi (**0.30 or newer** — Save Sync needs
+   `backups edit`) on the USB: `X:\SaveSync\ludusavi\ludusavi.exe`
    (or set an executable in Settings).
 2. Start `SaveSync.exe`. On the first run Settings opens: choose the USB and
    press **Use this drive** — this creates `X:\SaveSync\` and the marker.
