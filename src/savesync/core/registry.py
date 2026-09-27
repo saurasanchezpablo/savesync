@@ -215,6 +215,25 @@ class Registry(_JsonStore):
             self._write(data)
             return self._complete(merged)
 
+    def write(self, record: dict) -> dict:
+        """Like upsert, but None is a value: `{"trial": None}` clears the trial.
+        (upsert keeps the upstream meaning of None = "leave as it is".)"""
+        title = (record.get("title") or "").strip()
+        key = record.get("title_key") or title_key(title)
+        if not key:
+            raise ValueError("a record needs a title or a title_key")
+        with _WRITE_LOCK:
+            data = self._read()
+            merged = data.get(key) or self._blank(key)
+            merged.update(record)
+            merged["title"] = (title or merged.get("title") or "").strip()
+            if not merged["title"]:
+                raise ValueError("a record needs a non-empty title")
+            merged["title_key"] = key
+            data[key] = merged
+            self._write(data)
+            return self._complete(merged)
+
     def set_fields(self, key: str, **fields) -> dict:
         with _WRITE_LOCK:
             data = self._read()

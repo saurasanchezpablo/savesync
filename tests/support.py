@@ -41,6 +41,9 @@ def _sha1(path):
         return hashlib.sha1(fh.read()).hexdigest()
 
 
+_CLOCK = 1_800_000_000  # deterministic, strictly increasing `when`
+
+
 class FakeLudusavi:
     """Callable runner: `engine = LudusaviEngine(["ludusavi"], ..., runner=fake)`."""
 
@@ -48,19 +51,22 @@ class FakeLudusavi:
         # {title: [file or directory paths on this "PC"]}
         self.games = dict(games or {})
         self.calls = []
-        self.fail_paths = set()      # files that fail to read/write (failed: true)
+        self.fail_paths = set()      # files that fail during a real backup/restore
+        self.fail_preview_paths = set()  # files that fail even in a preview
+        self.fail_restore_paths = set()  # fail only when restored from the USB
         self.unreadable_usb = False  # every call touching the USB fails
         self.hooks = []              # callables(argv) -> reply|None, run first
-        self.clock = 1_800_000_000   # deterministic, strictly increasing `when`
         self.version_ok = True
 
     # --- helpers ---
 
     def _tick(self):
-        self.clock += 7
+        # one clock for every simulated PC: versions from two PCs never collide
+        global _CLOCK
+        _CLOCK += 7
         import time as _t
-        stamp = _t.strftime("%Y%m%dT%H%M%SZ", _t.gmtime(self.clock))
-        when = _t.strftime("%Y-%m-%dT%H:%M:%S.000000000Z", _t.gmtime(self.clock))
+        stamp = _t.strftime("%Y%m%dT%H%M%SZ", _t.gmtime(_CLOCK))
+        when = _t.strftime("%Y-%m-%dT%H:%M:%S.000000000Z", _t.gmtime(_CLOCK))
         return stamp, when
 
     def local_files(self, title):
@@ -188,8 +194,9 @@ class FakeLudusavi:
             previous = self._backup_state(root, title)
             entries, game_change, failed_here = {}, "Same", False
             current = {}
+            failing = self.fail_preview_paths | (set() if preview else self.fail_paths)
             for f in files:
-                if f in self.fail_paths:
+                if f in failing:
                     entries[f] = {"change": "Different", "bytes": 0, "failed": True,
                                   "error": {"message": "Permission denied (os error 13)"}}
                     failed_here = True
@@ -312,7 +319,9 @@ class FakeLudusavi:
                 else:
                     change = "Same"
                 entry = {"change": change, "bytes": 0}
-                if target in self.fail_paths or not os.path.isfile(stored):
+                if ((target in self.fail_paths or (target in self.fail_restore_paths
+                                                    and "safety" not in root)) and not preview) \
+                        or not os.path.isfile(stored):
                     entry.update(failed=True, error={"message": "No such file or directory (os error 2)"})
                     any_failed = True
                 elif not preview and change != "Same":

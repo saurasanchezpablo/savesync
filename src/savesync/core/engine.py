@@ -354,6 +354,8 @@ class LudusaviEngine:
         # titles Ludusavi's database does not know, learned from the last calls
         self.unknown_titles = set()
         self._scan_cache = {}
+        # time.monotonic() value after which no Ludusavi call may still run
+        self.deadline = None
 
     # --- plumbing ---
 
@@ -376,9 +378,15 @@ class LudusaviEngine:
             prefix += ["--config", self.config_dir]
         return prefix + MANIFEST_FLAG + args
 
+    def _timeout(self, timeout: float) -> float:
+        """A call never outlives the cycle's deadline (shutdown sync, plan §24)."""
+        if self.deadline is None:
+            return timeout
+        return max(1.0, min(timeout, self.deadline - time.monotonic()))
+
     def _api(self, args: list, timeout: float = LOCAL_TIMEOUT):
         """(code, data|None). None = don't know."""
-        code, out, err = self.runner(self._argv(args), timeout)
+        code, out, err = self.runner(self._argv(args), self._timeout(timeout))
         self.last_stderr = err or ""
         for stream in (out, err):
             try:
@@ -529,7 +537,7 @@ class LudusaviEngine:
         if comment is not None:
             args += ["--comment", comment]
         code, _out, err = self.runner(self._argv(_args_with_titles(args, [title.strip()])),
-                                      LOCAL_TIMEOUT)
+                                      self._timeout(LOCAL_TIMEOUT))
         self.last_stderr = err or ""
         return code == 0
 
