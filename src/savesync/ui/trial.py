@@ -68,6 +68,15 @@ class TrialDialog(QDialog):
                 b.setEnabled(False)
             return
         side = trial.get("side")
+        if side == "mixed":
+            self.side.setText("The last switch failed, so the PC may hold parts of both "
+                              "versions. Test the USB or the PC version again, or cancel.")
+            self.test_usb.setEnabled(not busy)
+            self.test_pc.setEnabled(not busy)
+            self.keep_usb.setEnabled(False)
+            self.keep_pc.setEnabled(False)
+            self.cancel_trial.setEnabled(not busy)
+            return
         if side == "starting":
             self.side.setText("The trial did not finish starting. Cancel it to return to "
                               "the original PC state.")

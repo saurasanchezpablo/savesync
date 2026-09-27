@@ -107,6 +107,9 @@ class FakeStartupManager(StartupManager):
     def is_enabled(self) -> bool:
         return self.enabled
 
+    def refresh(self) -> bool:
+        return False
+
     def enable(self) -> None:
         self.enabled = True
 

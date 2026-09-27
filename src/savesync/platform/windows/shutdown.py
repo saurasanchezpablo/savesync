@@ -44,7 +44,8 @@ class ShutdownProtocol:
         self.deadline_seconds = deadline_seconds
         self.callback = None
         self.precheck = None
-        self.armed = False
+        self.armed = False     # there is work to do at WM_ENDSESSION
+        self.blocked = False   # a block reason is registered
         self.last_result = None
 
     def on_message(self, message: int, wparam: int):
@@ -57,7 +58,11 @@ class ShutdownProtocol:
             except Exception:
                 work = False
             if work:
-                self.armed = self.api.block(self.hwnd(), REASON)
+                self.armed = True
+                try:
+                    self.blocked = bool(self.api.block(self.hwnd(), REASON))
+                except Exception:
+                    self.blocked = False  # sync anyway; Windows just shows no reason
             return True, 1  # never veto: the user decided to shut down
         if message == WM_ENDSESSION:
             if not self.armed:
@@ -69,8 +74,9 @@ class ShutdownProtocol:
                     except Exception:
                         self.last_result = False
             finally:
-                self.api.unblock(self.hwnd())
-                self.armed = False
+                if self.blocked:
+                    self.api.unblock(self.hwnd())
+                self.armed = self.blocked = False
             return True, 0
         return False, 0
 

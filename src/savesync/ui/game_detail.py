@@ -138,14 +138,16 @@ class GameDetailDialog(QDialog):
         self.exclude.blockSignals(False)
         self.process_names.setText(", ".join(rec.get("process_names") or []))
         connected = self.controller.drive is not None
+        busy = self.controller.busy
         self.resolve_button.setVisible(state in (GameState.CONFLICT, GameState.FIRST_SYNC)
                                        and not row.trial)
         self.resolve_button.setText("Trial mode…" if row.trial else "Resolve…")
         if row.trial:
             self.resolve_button.setVisible(True)
         self.manage_button.setVisible(state == GameState.MISSING_LOCAL_PATH)
-        self.sync_button.setEnabled(connected and not row.trial)
-        self.recover_button.setEnabled(row.has_recovery and not row.trial)
+        self.sync_button.setEnabled(connected and not row.trial and not busy)
+        self.recover_button.setEnabled(row.has_recovery and not row.trial and not busy)
+        self.resolve_button.setEnabled(not busy)
         if load_versions:
             self.versions.clear()
             for b in self.controller.usb_versions(self.title):
@@ -161,15 +163,21 @@ class GameDetailDialog(QDialog):
                 if b.incomplete:
                     item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsSelectable)
                 self.versions.addItem(item)
-        self.restore_button.setEnabled(connected and not row.trial)
+        self.restore_button.setEnabled(connected and not row.trial and not busy)
 
     def _finish(self, action):
         self.action = action
         self.accept()
 
+    def _started(self, accepted: bool, action: str) -> None:
+        if accepted:
+            self._finish(action)
+        else:
+            QMessageBox.information(self, "Save Sync", "Save Sync is busy with another "
+                                    "operation. Try again when it finishes.")
+
     def _sync(self):
-        self.controller.sync_now(titles=[self.title])
-        self._finish("sync")
+        self._started(self.controller.sync_now(titles=[self.title]), "sync")
 
     def _restore_version(self):
         item = self.versions.currentItem()
@@ -182,15 +190,14 @@ class GameDetailDialog(QDialog):
             "safety snapshot, and the restored version becomes the newest on the USB."
             % item.text().split("  ")[0])
         if answer == QMessageBox.StandardButton.Yes:
-            self.controller.restore_version(self.title, item.data(Qt.ItemDataRole.UserRole))
-            self._finish("restore_version")
+            self._started(self.controller.restore_version(
+                self.title, item.data(Qt.ItemDataRole.UserRole)), "restore_version")
 
     def _recover(self):
         answer = QMessageBox.question(self, "Recover",
                                       "Put back the PC saves from the latest safety snapshot?")
         if answer == QMessageBox.StandardButton.Yes:
-            self.controller.recover(self.title)
-            self._finish("recover")
+            self._started(self.controller.recover(self.title), "recover")
 
     def _manage(self):
         ManageDialog(self.controller, self.title, self).exec()

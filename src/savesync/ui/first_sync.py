@@ -21,7 +21,8 @@ class FirstSyncWizard(QDialog):
     def __init__(self, rows, parent=None):
         super().__init__(parent)
         self.setWindowTitle("First synchronization")
-        self.rows = [r for r in rows if r.state == GameState.FIRST_SYNC]
+        # a game already in trial mode is being decided there
+        self.rows = [r for r in rows if r.state == GameState.FIRST_SYNC and not r.trial]
         layout = QVBoxLayout(self)
         intro = QLabel("These games exist on this PC and/or the USB, but they have never been "
                        "synchronized here. No previously known state exists, so choose which "

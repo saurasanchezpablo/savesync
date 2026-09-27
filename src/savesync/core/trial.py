@@ -24,6 +24,7 @@ from .state import GameResult, GameState, Outcome
 
 SIDES = ("usb", "pc")
 STARTING = "starting"
+MIXED = "mixed"  # a switch failed halfway: the PC holds parts of both versions
 
 
 class TrialManager:
@@ -194,6 +195,9 @@ class TrialManager:
         if source:
             restored = self.engine.restore_from(title, source)
             if not restored.ok:
+                # the PC may now hold part of each version: neither side may be
+                # kept (or checkpointed) until one is applied completely
+                trial["side"] = MIXED
                 return restored.problem
         # files that belong only to the other side would make a mix of both
         known = set(trial["files_pc"]) | set(trial["files_usb"])
@@ -202,6 +206,7 @@ class TrialManager:
         keep = {os.path.normcase(p) for p in target_files}
         extra = [p for p in known if os.path.normcase(p) not in keep]
         if not self.service._remove_created(extra):
+            trial["side"] = MIXED
             return "could not remove files of the other version"
         trial["side"] = side
         return ""

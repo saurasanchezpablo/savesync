@@ -287,7 +287,7 @@ def test_killed_process_mid_restore_is_protected_and_blocks_use_pc(world):
     assert a.service.use_pc(world.drive, "Hades").outcome == O.SKIPPED
     assert a.service.recover_safety("Hades").outcome == O.RESTORED
     assert world.read_save("Hades") == "v1"
-    assert _game(a.sync()).outcome == O.RESTORED, "normal flow resumes after recovery"
+    assert _game(a.sync()).state == S.FIRST_SYNC, "after a recovery the user decides"
 
 
 # 10 — trial progress survives switching ------------------------------------------------------

@@ -143,7 +143,7 @@ class SettingsDialog(QDialog):
             self.usb_current.setText("Registered USB: %s (not connected)" % registered)
         else:
             self.usb_current.setText("No USB registered yet. Connect a drive and choose it below.")
-        self.register_button.setEnabled(self.usb_combo.count() > 0)
+        self.register_button.setEnabled(self.usb_combo.count() > 0 and not self.controller.busy)
 
     def register_selected(self) -> None:
         drive = self.usb_combo.currentData()
@@ -157,7 +157,10 @@ class SettingsDialog(QDialog):
                 "will need a first synchronization with the new drive." % drive.display_name)
             if answer != QMessageBox.StandardButton.Yes:
                 return
-        self.controller.register_usb(drive)
+        if self.controller.register_usb(drive) is None:
+            QMessageBox.information(self, "Change USB", "Save Sync is busy with another "
+                                    "operation. Try again when it finishes.")
+            return
         self.refresh_drives()
 
     # --- other ---

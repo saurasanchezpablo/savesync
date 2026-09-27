@@ -90,6 +90,7 @@ CODES = {
     "trial_failed": "{title}: trial step failed: {detail}",
     "trial_active": "{title} is in trial mode. Finish or cancel the trial first.",
     # --- cycle ---
+    "busy": "Save Sync is busy with another operation. Try again when it finishes.",
     "sync_locked": "A synchronization is already running (process {pid}, since {when}).",
     "sync_lock_takeover_failed": "Could not take the synchronization lock: {detail}",
     "sync_summary": "{synced} synchronized · {attention} require attention.",

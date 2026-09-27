@@ -16,7 +16,12 @@ def _names(games) -> str:
 
 
 def summarize(report: SyncReport) -> list:
-    """[(preference key, title, message)] for one finished cycle."""
+    """[(preference key, title, message)] for one finished cycle, most severe
+    first. Games in trial mode are being decided already and are not repeated."""
+    report = SyncReport(games=[g for g in report.games
+                               if not (g.message and g.message.get("code") == "state_trial")],
+                        errors=report.errors, completed=report.completed,
+                        analyzed_only=report.analyzed_only)
     out = []
     if report.errors:
         out.append(("error", "Save Sync — problem", "\n".join(text(e) for e in report.errors[:3])))

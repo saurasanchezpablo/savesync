@@ -63,3 +63,12 @@ class WindowsStartupManager(StartupManager):
 
     def disable(self) -> None:
         self.run_key.delete(VALUE_NAME)
+
+    def refresh(self) -> bool:
+        """Rewrite an enabled entry that points somewhere else (the portable folder
+        moved). True when it was rewritten."""
+        current = self.run_key.get(VALUE_NAME)
+        if current and current != self.command:
+            self.run_key.set(VALUE_NAME, self.command)
+            return True
+        return False

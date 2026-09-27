@@ -69,7 +69,10 @@ class WatchdogFileWatcher(FileWatcher):
         self._folders = []
         self._roots = {}
         self._pending = set()
-        self._lock = threading.Lock()
+        # one lock serializes watch/stop/restart and the pending set; the
+        # generation makes a timer from before a stop() or re-watch harmless
+        self._lock = threading.RLock()
+        self._generation = 0
         self._timer = None
 
     def _new_observer(self):
@@ -79,14 +82,26 @@ class WatchdogFileWatcher(FileWatcher):
         return Observer()
 
     def watch(self, paths, callback) -> None:
-        self.stop()
-        self._paths = list(paths or [])
-        self._callback = callback
-        self._folders = sorted({os.path.abspath(p) if os.path.isdir(p) else
-                                os.path.dirname(os.path.abspath(p)) for p in self._paths})
-        self._arm()
+        paths = list(paths or [])
+        with self._lock:
+            if paths == self._paths and self._observer is not None:
+                # nothing to re-arm (called after every job): keep pending changes
+                self._callback = callback
+                return
+            undelivered = sorted(self._pending)
+            old_callback = self._callback
+            retired = self._stop_locked()
+            self._paths = paths
+            self._callback = callback
+            self._folders = sorted({os.path.abspath(p) if os.path.isdir(p) else
+                                    os.path.dirname(os.path.abspath(p)) for p in paths})
+            self._arm_locked()
+        self._retire(retired)
+        # changes seen just before the re-watch are delivered, not dropped
+        for folder in undelivered:
+            self._deliver(old_callback or callback, folder)
 
-    def _arm(self) -> None:
+    def _arm_locked(self) -> None:
         self._roots = watch_roots(self._paths)
         if not self._roots:
             return
@@ -111,62 +126,84 @@ class WatchdogFileWatcher(FileWatcher):
         return None
 
     def _event(self, path: str) -> None:
-        if self._roots.get(os.path.abspath(path)) is False:
-            # "this ancestor folder was modified" says nothing about the save
-            # folder below it; its creation arrives as its own event
-            return
-        folder = self._relevant(path)
-        if folder is None:
-            return
         with self._lock:
+            if self._observer is None:
+                return  # events from an observer being retired
+            if self._roots.get(os.path.abspath(path)) is False:
+                # "this ancestor folder was modified" says nothing about the save
+                # folder below it; its creation arrives as its own event
+                return
+            folder = self._relevant(path)
+            if folder is None:
+                return
             self._pending.add(folder)
             if self._timer is not None:
                 self._timer.cancel()
-            self._timer = threading.Timer(self.debounce, self.flush)
+            generation = self._generation
+            self._timer = threading.Timer(self.debounce, self.flush, args=(generation,))
             self._timer.daemon = True
             self._timer.start()
 
-    def flush(self) -> None:
+    @staticmethod
+    def _deliver(callback, folder) -> None:
+        if callback is None:
+            return
+        try:
+            callback(folder)
+        except Exception:
+            pass
+
+    def flush(self, generation=None) -> None:
         """Deliver the coalesced changes (called by the debounce timer)."""
         with self._lock:
+            if generation is not None and generation != self._generation:
+                return  # a timer from before stop()/re-watch
             pending, self._pending = sorted(self._pending), set()
             self._timer = None
-        callback = self._callback
-        if callback is not None:
-            for folder in pending:
-                try:
-                    callback(folder)
-                except Exception:
-                    pass
-        # folders removed or recreated change what can be watched
-        if watch_roots(self._paths) != self._roots and self._callback is not None:
-            self._restart()
-
-    def _restart(self) -> None:
-        observer, self._observer = self._observer, None
-        if observer is not None:
-            observer.stop()
-            if observer is not threading.current_thread():
-                try:
-                    observer.join(timeout=2)
-                except RuntimeError:
-                    pass
-        self._arm()
-
-    def stop(self) -> None:
+            callback = self._callback
+        for folder in pending:
+            self._deliver(callback, folder)
+        retired = None
         with self._lock:
-            if self._timer is not None:
-                self._timer.cancel()
-                self._timer = None
-            self._pending = set()
+            if generation is not None and generation != self._generation:
+                return
+            # folders removed or recreated change what can be watched
+            if self._callback is not None and watch_roots(self._paths) != self._roots:
+                retired, self._observer = self._observer, None
+                self._arm_locked()
+        self._retire(retired)
+
+    def _stop_locked(self):
+        """Detach the observer; the caller stops it AFTER releasing the lock.
+
+        Stopping needs watchdog's internal lock, which the observer thread holds
+        while it is inside `_event` waiting for ours — stopping under our lock
+        deadlocks (seen in the tests)."""
+        self._generation += 1
+        if self._timer is not None:
+            self._timer.cancel()
+            self._timer = None
+        self._pending = set()
         observer, self._observer = self._observer, None
-        if observer is not None:
-            observer.stop()
+        return observer
+
+    @staticmethod
+    def _retire(observer) -> None:
+        if observer is None:
+            return
+        observer.stop()
+        if observer is not threading.current_thread():
             try:
                 observer.join(timeout=2)
             except RuntimeError:
                 pass
-        self._callback = None
+
+    def stop(self) -> None:
+        with self._lock:
+            retired = self._stop_locked()
+            self._callback = None
+            self._paths = []
+        self._retire(retired)
 
     @property
     def roots(self) -> dict:

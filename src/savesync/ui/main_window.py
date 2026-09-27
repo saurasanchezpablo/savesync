@@ -1,7 +1,7 @@
 """Main status window (plan §19.2). A status application, not a Ludusavi clone."""
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QHBoxLayout, QLabel, QLineEdit, QListView, QMainWindow,
                                QMessageBox, QProgressBar, QPushButton, QTabBar, QToolBar,
@@ -232,6 +232,10 @@ class MainWindow(QMainWindow):
             self.progress.setRange(0, 0)
             self.status.setText("Synchronizing…")
         self.refresh()
+        if not busy:
+            # decisions made while a sync ran would otherwise wait in the queue
+            # until some unrelated action finished
+            QTimer.singleShot(0, self._next)
 
     def _on_progress(self, stage: str, done: int, total: int, title: str) -> None:
         if total:
@@ -286,7 +290,8 @@ class MainWindow(QMainWindow):
 
     def open_first_sync(self, rows=None):
         rows = rows if rows is not None else [
-            r for r in self.controller.rows() if r.state == GameState.FIRST_SYNC]
+            r for r in self.controller.rows() if r.state == GameState.FIRST_SYNC and not r.trial]
+        rows = [r for r in rows if not r.trial]
         if not rows:
             return None
         wizard = FirstSyncWizard(rows, self)
@@ -330,8 +335,16 @@ class MainWindow(QMainWindow):
         self._next()
 
     def _next(self) -> None:
+        """Run the next queued decision — only if it still applies: a sync that
+        ran in between may have changed the game (or started a trial)."""
         while self.queue and not self.controller.busy:
             action, title = self.queue.pop(0)
+            row = self.controller.row(title)
+            if row is None or row.trial or row.state not in (GameState.CONFLICT,
+                                                             GameState.FIRST_SYNC):
+                self.status.setText("%s: the decision no longer applies (%s)." % (
+                    title, STATE_LABELS[row.state] if row else "unknown game"))
+                continue
             if action(title):
                 return
 

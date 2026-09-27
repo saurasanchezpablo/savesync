@@ -130,6 +130,8 @@ class AppController(QObject):
         self._waiting = {}
         self._skipped = set()
         self._started = False
+        self._worker = None
+        self._deferred_sync = False
         self._drivesSignal.connect(self._on_drives)
         self._watchSignal.connect(self._on_watch)
         self._doneSignal.connect(self._on_done)
@@ -210,6 +212,12 @@ class AppController(QObject):
         self._apply_drives(self.platform.media.get_removable_drives(), initial=True)
         self.rewatch()
         self.apply_shutdown_setting()
+        refresh = getattr(self.platform.startup, "refresh", None)
+        if refresh is not None:
+            try:
+                refresh()  # the portable folder may have moved since it was enabled
+            except OSError:
+                pass
         if cfg.get("first_run") or not (cfg.get("usb_id") or "").strip():
             self.criticalCondition.emit("setup", None)
 
@@ -221,6 +229,7 @@ class AppController(QObject):
             timer.stop()
         self._waiting.clear()
         self.cancel_sync("exit")
+        self._join_worker(10)
         try:
             self.platform.media.stop_monitoring()
         finally:
@@ -265,8 +274,10 @@ class AppController(QObject):
                 self.log.add("usb", m, result="connected", destination=registered.drive_letter)
                 self._notify("usb_connected", "Save Sync", text(m))
                 self._skipped.clear()
-                if cfg.get("sync_on_usb_connect"):
-                    self.sync_now(user=False)
+                if cfg.get("sync_on_usb_connect") and not self.sync_now(user=False):
+                    # busy (e.g. the cancelled cycle is still rolling back):
+                    # run once the current job is over
+                    self._deferred_sync = True
         elif registered is None and previous is not None:
             self._on_usb_removed(previous)
         if registered is None and self.usb_status == UsbStatus.UNKNOWN and not initial:
@@ -283,8 +294,12 @@ class AppController(QObject):
         if pending:
             self._notify("usb_removed_pending", "⚠ USB removed with pending changes", text(m))
 
-    def register_usb(self, drive) -> dict:
-        """Make `drive` the Save Sync USB (initializing its structure when needed)."""
+    def register_usb(self, drive):
+        """Make `drive` the Save Sync USB (initializing its structure when needed).
+        Refused (None) while an operation runs: its results belong to the old USB."""
+        if self.busy:
+            self.message.emit(text(msg("busy")))
+            return None
         identity = usbmod.initialize(drive)
         self.config.update(first_run=False, **usbmod.registration_fields(drive, identity))
         m = msg("usb_registered", label=drive.label or drive.drive_letter)
@@ -299,7 +314,7 @@ class AppController(QObject):
 
     def _submit(self, work, done) -> bool:
         if self.busy:
-            self.message.emit(text(msg("sync_locked", pid=os.getpid(), when="now")))
+            self.message.emit(text(msg("busy")))
             return False
         self.busy = True
         self.busyChanged.emit(True)
@@ -309,8 +324,17 @@ class AppController(QObject):
 
         def runner():
             self._doneSignal.emit(done, self._run_safely(work))
-        threading.Thread(target=runner, name="savesync-worker", daemon=True).start()
+        self._worker = threading.Thread(target=runner, name="savesync-worker", daemon=True)
+        self._worker.start()
         return True
+
+    def _join_worker(self, timeout: float) -> bool:
+        """Wait for the background job (already cancelled by the caller)."""
+        worker = self._worker
+        if worker is None or not worker.is_alive():
+            return True
+        worker.join(max(0.0, timeout))
+        return not worker.is_alive()
 
     @staticmethod
     def _run_safely(work):
@@ -326,12 +350,16 @@ class AppController(QObject):
     def _finish(self, done, result) -> None:
         self.busy = False
         self._cancel = None
+        self._worker = None
         self.busyChanged.emit(False)
         try:
             done(result)
         finally:
             self.gamesChanged.emit()
             self.rewatch()
+            if self._deferred_sync and not self.busy and self.drive is not None:
+                self._deferred_sync = False
+                self.sync_now(user=False)
 
     def cancel_sync(self, reason: str = "cancelled") -> None:
         token = self._cancel
@@ -354,10 +382,15 @@ class AppController(QObject):
                 self.criticalCondition.emit("usb", problem)
             return False
         token = CancelToken()
+        if self.busy:
+            self.message.emit(text(msg("busy")))
+            return False
+        self._cancel = token  # before the worker starts: a removal may cancel at once
 
         def work():
             service = self.service(drive)
-            self._cancel = token
+            if token.cancelled:
+                service.engine.cancel()
             report = service.sync(drive, titles=titles, cancel=token, deadline=deadline,
                                   on_progress=lambda *a: self.syncProgress.emit(*a))
             self._after_ludusavi(service.engine, drive, report)
@@ -379,11 +412,12 @@ class AppController(QObject):
     def _after_sync(self, report: SyncReport, user: bool) -> None:
         self.last_report = report
         self.last_problem = report.errors[0] if report.errors else None
-        for kind, title, body in summarize(report):
-            self._notify(kind, title, body)
+        self._notify_many(summarize(report))
         self.syncFinished.emit(report)
+        # a game in trial mode is already being decided: no prompts for it
         needs_decision = [g for g in report.games
-                          if g.state in (GameState.CONFLICT, GameState.FIRST_SYNC)]
+                          if g.state in (GameState.CONFLICT, GameState.FIRST_SYNC)
+                          and not (g.message and g.message.get("code") == "state_trial")]
         rollback_failed = [g for g in report.games if g.message
                            and g.message.get("code") == "restore_rollback_failed"]
         if rollback_failed:
@@ -406,10 +440,17 @@ class AppController(QObject):
         drive = self.drive
         if drive is None:
             return True
-        deadline = time.monotonic() + max(1.0, float(deadline_seconds))
+        started = time.monotonic()
+        deadline = started + max(1.0, float(deadline_seconds))
+        if self.busy:
+            # a job is running: stop it safely (it rolls back what it must) and
+            # wait for it — Windows kills the process once this handler returns
+            self.cancel_sync("shutdown")
+            if not self._join_worker(max(0.0, deadline - time.monotonic() - 5)):
+                self.config.update(shutdown_incomplete=True)
+                return False
         token = CancelToken()
         self._cancel = token
-        started = time.monotonic()
         try:
             report = self.service(drive).sync(drive, cancel=token, deadline=deadline)
         except Exception as exc:
@@ -487,10 +528,14 @@ class AppController(QObject):
         """[BackupInfo] of `title` on the USB, newest first (runs Ludusavi)."""
         if self.drive is None:
             return []
+        if self.busy:
+            return []  # never run Ludusavi on the Qt thread next to a running job
         try:
             # a separate engine: the one a running sync uses must stay the one
             # cancel_sync() stops
             engine = self._engine_factory(self.drive)
+            engine.manifest_flag = ["--no-manifest-update"]
+            engine.deadline = time.monotonic() + 15  # the window stays responsive
             listing = engine.backups(self.drive.backups_dir, [title])
         except Exception:
             return []
@@ -648,6 +693,20 @@ class AppController(QObject):
             return self.metadata.get_platform(title)
         except Exception:
             return None
+
+    def _notify_many(self, items) -> None:
+        """One notification per cycle: a new tray message replaces the one on
+        screen, so several would hide all but the last. Most severe first."""
+        prefs = self.config.get("notifications") or {}
+        wanted = [(k, t, b) for k, t, b in items if prefs.get(k, True)]
+        if not wanted:
+            return
+        title = wanted[0][1]
+        body = "\n".join(b for _k, _t, b in wanted)
+        try:
+            self.notifier.notify(title, body)
+        except Exception:
+            pass
 
     def _notify(self, kind: str, title: str, body: str) -> None:
         prefs = self.config.get("notifications") or {}

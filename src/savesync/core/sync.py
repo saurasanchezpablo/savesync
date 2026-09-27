@@ -155,6 +155,11 @@ class SyncService:
         return self.config.load()
 
     def _usb_id(self) -> str:
+        # pinned for the duration of a cycle/operation: registering another USB
+        # meanwhile must not stamp this USB's results with the other's identity
+        pinned = getattr(self, "_pinned_usb_id", None)
+        if pinned is not None:
+            return pinned
         return (self._cfg().get("usb_id") or "").strip()
 
     def _event(self, operation, message=None, **fields):
@@ -462,6 +467,7 @@ class SyncService:
             self._event("sync", problem, result="refused")
             self.last_report = report
             return report
+        self._pinned_usb_id = (self._cfg().get("usb_id") or "").strip()
         try:
             with self.engine.lock():
                 self.engine.deadline = deadline
@@ -474,6 +480,8 @@ class SyncService:
                     self.engine.deadline = None
         except SyncLocked as exc:
             report.errors.append(exc.msg)
+        finally:
+            self._pinned_usb_id = None
         report.finished = self.clock()
         if not analyze_only:
             self._event("sync", msg("sync_summary", synced=len(report.synchronized),
@@ -718,7 +726,9 @@ class SyncService:
             return self._rollback(a, safety_dir, safety_ok, result.created,
                                   "the restored saves could not be fingerprinted", duration)
         fields = self._baseline_fields(adopt_when or version.when, fp, local.paths)
-        fields.update(title=title, last_safety=safety_dir)
+        # what this restore created: a later "Recover previous PC state" must
+        # remove it, or the PC would end as a mix of both versions
+        fields.update(title=title, last_safety=safety_dir, last_restore_created=result.created)
         m = msg("restore_done", title=title)
         self._event("restore", m, game=title, source="USB", destination="PC",
                     result="success", duration=duration)
@@ -790,6 +800,7 @@ class SyncService:
         if rec.get("trial"):
             return GameResult(key, title, GameState.parse(rec.get("state")), Outcome.SKIPPED,
                               msg("trial_active", title=title))
+        self._pinned_usb_id = (self._cfg().get("usb_id") or "").strip()
         try:
             with self.engine.lock():
                 self.engine.reset()
@@ -803,6 +814,8 @@ class SyncService:
                     self._end_processes()
         except SyncLocked as exc:
             return GameResult(key, title, GameState.parse(rec.get("state")), Outcome.SKIPPED, exc.msg)
+        finally:
+            self._pinned_usb_id = None
         fields.setdefault("title", title)
         self.registry.write(fields)
         return result
@@ -919,10 +932,15 @@ class SyncService:
             self._event("recover", m, game=title, source="safety", destination="PC",
                         result="failed", error=back.problem)
             return GameResult(key, title, GameState.ERROR, Outcome.FAILED, m)
-        self._remove_created(pending.get("created"), keep=back.files)
+        created = pending.get("created") if pending else rec.get("last_restore_created")
+        self._remove_created(created, keep=back.files)
         m = msg("safety_recovered", title=title)
+        # The recovered state is older than the baseline: nothing automatic may
+        # decide what to do with it. Without a baseline the next cycle asks.
         self.registry.write({"title": title, "pending_op": None, "error": "",
-                              "state": GameState.UNKNOWN.value, "state_message": m})
+                             "last_synced_backup": "", "local_fingerprint": "",
+                             "last_restore_created": [],
+                             "state": GameState.UNKNOWN.value, "state_message": m})
         self._event("recover", m, game=title, source="safety", destination="PC", result="success")
         return GameResult(key, title, GameState.UNKNOWN, Outcome.RESTORED, m)
 

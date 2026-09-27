@@ -385,6 +385,7 @@ class LudusaviEngine:
         self.deadline = None
         self.wall_clock = time.time
         self.sleep = time.sleep
+        self.manifest_flag = list(MANIFEST_FLAG)
 
     # --- plumbing ---
 
@@ -405,7 +406,7 @@ class LudusaviEngine:
         prefix = list(self.command)
         if self.config_dir:
             prefix += ["--config", self.config_dir]
-        return prefix + MANIFEST_FLAG + args
+        return prefix + self.manifest_flag + args
 
     def _timeout(self, timeout: float) -> float:
         """A call never outlives the cycle's deadline (shutdown sync, plan §24)."""

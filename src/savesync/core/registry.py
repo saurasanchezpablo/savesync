@@ -57,6 +57,7 @@ FIELDS = {
     "pc_has_save": False,
     "usb_has_backup": False,
     "restore_problem": "",
+    "last_restore_created": [],
 }
 
 CONFIG_FIELDS = {

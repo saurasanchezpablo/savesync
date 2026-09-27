@@ -99,3 +99,37 @@ def test_stop_is_idempotent_and_silences(tmp_path):
     watcher.stop()
     write(save, "after stop")
     assert not event.wait(0.5)
+
+
+def test_rewatching_the_same_paths_keeps_a_pending_change(tmp_path):
+    """A job ends (rewatch) 0.1 s after a save was written: it must still be reported."""
+    save = write(str(tmp_path / "Game" / "s.sav"), "x")
+    watcher = WatchdogFileWatcher(debounce=0.4)
+    seen, event, callback = _collector()
+    watcher.watch([save], callback)
+    try:
+        time.sleep(0.2)
+        write(save, "changed")
+        time.sleep(0.15)
+        watcher.watch([save], callback)
+        assert event.wait(5)
+    finally:
+        watcher.stop()
+
+
+def test_rewatching_different_paths_delivers_pending_changes(tmp_path):
+    save = write(str(tmp_path / "Game" / "s.sav"), "x")
+    other = write(str(tmp_path / "Other" / "o.sav"), "y")
+    watcher = WatchdogFileWatcher(debounce=5)
+    seen, event, callback = _collector()
+    watcher.watch([save], callback)
+    try:
+        time.sleep(0.2)
+        write(save, "changed")
+        deadline = time.time() + 3
+        while not watcher._pending and time.time() < deadline:
+            time.sleep(0.05)
+        watcher.watch([save, other], callback)
+        assert seen == [str(tmp_path / "Game")]
+    finally:
+        watcher.stop()
