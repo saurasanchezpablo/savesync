@@ -65,8 +65,13 @@ class HistoryDialog(QDialog):
         layout.addWidget(close)
         # the log may be written from the worker thread
         self._appended.connect(lambda _e: self.reload())
-        log.subscribe(self._appended.emit)
+        self._listener = self._appended.emit
+        log.subscribe(self._listener)
         self.reload()
+
+    def done(self, code):
+        self.log.unsubscribe(self._listener)
+        super().done(code)
 
     def reload(self) -> None:
         needle = self.search.text().strip().lower()

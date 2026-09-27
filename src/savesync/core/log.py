@@ -29,6 +29,12 @@ class EventLog:
         """`callback(entry)` after every write — the History view refreshes from it."""
         self._listeners.append(callback)
 
+    def unsubscribe(self, callback) -> None:
+        try:
+            self._listeners.remove(callback)
+        except ValueError:
+            pass
+
     def add(self, operation: str, message=None, *, game: str = "", source: str = "",
             destination: str = "", result: str = "", duration: float | None = None,
             error: str = "") -> dict:

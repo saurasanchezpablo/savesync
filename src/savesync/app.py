@@ -495,7 +495,10 @@ class AppController(QObject):
         if self.drive is None:
             return []
         try:
-            listing = self.service(self.drive).engine.backups(self.drive.backups_dir, [title])
+            # a separate engine: the one a running sync uses must stay the one
+            # cancel_sync() stops
+            engine = self._engine_factory(self.drive)
+            listing = engine.backups(self.drive.backups_dir, [title])
         except Exception:
             return []
         return sorted((listing or {}).get(title) or [], key=lambda b: b.when, reverse=True)

@@ -6,10 +6,9 @@ import os
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
-                               QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+                               QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMessageBox, QPushButton, QVBoxLayout)
 
-from ..core.messages import text
 from ..core.state import GameState
 from .resources import STATE_COLORS, STATE_LABELS, iso_text, when_text
 
